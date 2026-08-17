@@ -4,11 +4,7 @@ A real-time computer vision pipeline that detects faces from a webcam/video feed
 and classifies the emotion expressed (Happy, Sad, Angry, Surprise, Neutral, Fear, Disgust)
 using a Convolutional Neural Network.
 
-## Why this project (for Qualcomm)
-Qualcomm's Snapdragon platforms power camera ISPs and on-device vision AI (auto-focus,
-scene detection, portrait mode, AR/VR). This project mirrors that exact pipeline:
-**capture → face localization → real-time classification**, and it's a natural way to
-talk about latency, model size, and accuracy tradeoffs in an interview.
+
 
 ## Architecture
 
