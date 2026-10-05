@@ -1,0 +1,5 @@
+tensorflow>=2.15,<2.21
+opencv-python
+numpy
+matplotlib
+scipy

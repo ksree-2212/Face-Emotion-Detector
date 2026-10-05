@@ -1,71 +1,62 @@
 """
 model_def.py
 ------------
-Defines the CNN architecture used for facial emotion classification.
+CNN architecture + label handling for facial emotion classification.
 
-Kept in its own file (separate from training/inference logic) so it's easy
-to inspect, modify, and explain layer-by-layer in an interview setting.
-
-Input : 48x48 grayscale face image (1 channel)
+Input : 48x48 grayscale face (1 channel)
 Output: probability distribution over 7 emotion classes
+
+IMPORTANT (label order): Keras `flow_from_directory` assigns class indices in
+ALPHABETICAL folder order. The labels below MUST follow that same order, and
+train_model.py also saves the exact mapping to models/class_names.json, which
+the detection scripts load, so training and inference can never disagree.
 """
-
-from tensorflow.keras import layers, models
-
-EMOTION_CLASSES = [
-    "Angry", "Disgust", "Fear", "Happy", "Sad", "Surprise", "Neutral"
-]
+import json
+import os
 
 IMG_SIZE = 48
+# Alphabetical == folder order of data/fer2013/train
+EMOTION_CLASSES = ["Angry", "Disgust", "Fear", "Happy", "Neutral", "Sad", "Surprise"]
+
+MODELS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models")
+CLASS_NAMES_PATH = os.path.join(MODELS_DIR, "class_names.json")
 
 
-def build_emotion_cnn(num_classes: int = len(EMOTION_CLASSES)) -> models.Sequential:
+def load_class_names():
+    """Labels in the exact index order used during training."""
+    if os.path.exists(CLASS_NAMES_PATH):
+        with open(CLASS_NAMES_PATH) as f:
+            mapping = json.load(f)  # {"angry": 0, ...}
+        return [n.capitalize() for n, _ in sorted(mapping.items(), key=lambda kv: kv[1])]
+    return EMOTION_CLASSES
+
+
+def build_emotion_cnn(num_classes: int = len(EMOTION_CLASSES)):
     """
-    Builds a compact CNN for 48x48 grayscale emotion classification.
+    Compact CNN trained FROM SCRATCH (random init, no pretrained weights).
 
-    Design rationale:
-    - 3 convolutional blocks progressively extract low -> high level facial features
-      (edges/gradients -> facial parts like eyes/mouth curvature -> holistic expression)
-    - BatchNorm after each conv layer stabilizes training and speeds convergence
-    - Dropout layers combat overfitting, since FER-2013 is a relatively small/noisy dataset
-    - GlobalAveragePooling instead of Flatten+huge Dense layer keeps parameter count low
-      (important if you later want to quantize/deploy this on constrained hardware)
+    - 3 conv blocks: edges -> facial parts -> expression-level features
+    - BatchNorm stabilises training; Dropout fights overfitting (FER-2013 is small/noisy)
+    - GlobalAveragePooling keeps the parameter count low (good for edge/TFLite later)
     """
-    model = models.Sequential(name="emotion_cnn")
+    from tensorflow.keras import layers, models
 
-    # Block 1
-    model.add(layers.Input(shape=(IMG_SIZE, IMG_SIZE, 1)))
-    model.add(layers.Conv2D(32, (3, 3), padding="same", activation="relu"))
-    model.add(layers.BatchNormalization())
-    model.add(layers.Conv2D(32, (3, 3), padding="same", activation="relu"))
-    model.add(layers.BatchNormalization())
-    model.add(layers.MaxPooling2D(pool_size=(2, 2)))
-    model.add(layers.Dropout(0.25))
+    m = models.Sequential(name="emotion_cnn")
+    m.add(layers.Input(shape=(IMG_SIZE, IMG_SIZE, 1)))
 
-    # Block 2
-    model.add(layers.Conv2D(64, (3, 3), padding="same", activation="relu"))
-    model.add(layers.BatchNormalization())
-    model.add(layers.Conv2D(64, (3, 3), padding="same", activation="relu"))
-    model.add(layers.BatchNormalization())
-    model.add(layers.MaxPooling2D(pool_size=(2, 2)))
-    model.add(layers.Dropout(0.25))
+    for filters, n_convs, drop in [(32, 2, 0.25), (64, 2, 0.25), (128, 1, 0.30)]:
+        for _ in range(n_convs):
+            m.add(layers.Conv2D(filters, (3, 3), padding="same", activation="relu"))
+            m.add(layers.BatchNormalization())
+        m.add(layers.MaxPooling2D((2, 2)))
+        m.add(layers.Dropout(drop))
 
-    # Block 3
-    model.add(layers.Conv2D(128, (3, 3), padding="same", activation="relu"))
-    model.add(layers.BatchNormalization())
-    model.add(layers.MaxPooling2D(pool_size=(2, 2)))
-    model.add(layers.Dropout(0.3))
-
-    # Classifier head
-    model.add(layers.GlobalAveragePooling2D())
-    model.add(layers.Dense(128, activation="relu"))
-    model.add(layers.Dropout(0.4))
-    model.add(layers.Dense(num_classes, activation="softmax"))
-
-    return model
+    m.add(layers.GlobalAveragePooling2D())
+    m.add(layers.Dense(128, activation="relu"))
+    m.add(layers.Dropout(0.4))
+    m.add(layers.Dense(num_classes, activation="softmax"))
+    return m
 
 
 if __name__ == "__main__":
-    # Quick sanity check: build the model and print the architecture summary.
-    m = build_emotion_cnn()
-    m.summary()
+    build_emotion_cnn().summary()
